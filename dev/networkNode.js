@@ -246,6 +246,8 @@ app.post('/register-nodes-bulk', function(req, res) {
 
 
 // consensus end point
+// basically checks all nodes to find any with a chain longer than what's on each node
+// if a longer chain is found, replace it on the node
 app.get('/consensus', function(req, res) {
     // need to get blockchain from all nodes in network
     const requestPromises = [];
@@ -268,14 +270,85 @@ app.get('/consensus', function(req, res) {
         let newPendingTransactions = null;
 
         blockchains.forEach(blockchain => {
-            
+            // need to look for a longer chain than what we currently have
+            // if there is, we reset to this new longest chain
+            // once looped through, the variables will be the longest chain
+            if(blockchain.chain.length > maxChainLength) {
+                maxChainLength = blockchain.chain.length;
+                newLongestChain = blockchain.chain;
+                newPendingTransactions = blockchain.pendingTransactions;
+            }
         });
         
-        res.json({ note: 'Transaction created & broadcasted. Ok??'});
+        // if there's no new longest (current is longest)
+        // or there is a new longest, but it's not valid
+        // then simply don't replace it
+        if(!newLongestChain || (newLongestChain && !jccoin.chainIsValid(newLongestChain))) {
+            res.json({ 
+                note: 'Current chain has not been replaced. Ok??',
+                chain: jccoin.chain
+            });
+        }
+        else {
+            // there is a new longest, so replace current node to one with longest chain
+            jccoin.chain = newLongestChain;
+            jccoin.pendingTransactions = newPendingTransactions;
+        }
+        res.json({ 
+            note: 'This chain has been replaced. Got it bub??',
+            chain: jccoin.chain
+        });
     });
 });
 
+// get a specific block by its hash
+app.get('/block/:blockHash', function(req, res) {
+    // get the hash from the URL
+    const blockHash = req.params.blockHash;
 
+    // get the block by hash
+    const correctBlock = jccoin.getBlock(blockHash);
+
+    // spit it out
+    res.json({ 
+        block: correctBlock
+    });
+});
+
+// get a specific transaction
+app.get('/transaction/:transactionId', function(req, res) {
+    // get the transaction ID from the URL
+    const transactionId = req.params.transactionId;
+
+    // get the transaction & block by ID
+    const transactionData = jccoin.getTransaction(transactionId);
+
+    // spit it out
+    res.json({ 
+        transaction: transactionData.transaction,
+        block: transactionData.block
+    });
+});
+
+// get all transactions and total for a given address
+app.get('/address/:address', function(req, res) {
+    // get the address from the URL
+    const address = req.params.address;
+    
+    // get the transaction & total by address
+    const addressData = jccoin.getAddressData(address);
+
+    // spit it out
+    res.json({ 
+        addressData: addressData
+    });
+});
+
+// send the block explorer HTML
+app.get('/block-explorer', function(req, res) {
+    // send the whole file
+    res.sendFile('./block-explorer/index.html', {root: __dirname });
+});
 
 app.listen(port, function() {
     console.log('Listening baby, on port ' + port);
